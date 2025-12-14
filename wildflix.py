@@ -173,7 +173,7 @@ if not st.session_state.authenticated:
 
 
     # Espacement sous le titre fixe pour laisser voir le fond
-    st.markdown("<br><br><br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
+    st.markdown("<br><br><br><br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
 
     # Formulaire "normal" (défile, mais stylé correctement)
     username = st.text_input("Username")
@@ -221,8 +221,8 @@ else:
                 options = ["Accueil", "Dashboard Réalisateur", "Dashboard Film", "Dashboard Acteur/Actrice", "Dashboard Genre"]
 
             )
-    # Charger le fichier df_final.csv
-    df_final = pd.read_csv("df_final.csv", sep=";")
+    # Charger le fichier df_film.csv
+    df_film = pd.read_csv("df_film.csv", sep=";")
 
 
     # Page Accueil
@@ -232,11 +232,11 @@ else:
         # Liste déroulante basée sur la colonne Title
         choix_titre = st.selectbox(
             "Choisissez un film :",
-            options=df_final["Title"].dropna().unique()
+            options=df_film["Title"].dropna().unique()
         )
 
         # Récupération des infos du film choisi
-        film = df_final[df_final["Title"] == choix_titre].iloc[0]
+        film = df_film[df_film["Title"] == choix_titre].iloc[0]
 
         # Bloc poster + infos
         col1, col2 = st.columns([1.2, 2.4])  # col1 plus étroite, col2 plus large
@@ -262,9 +262,9 @@ else:
 
         rec_cols = st.columns(5)
         # Exemple : recommandations basées sur le même genre que le film choisi
-        recommandations = df_final[
-            (df_final["Title"] != choix_titre) & 
-            (df_final["Genre"] == film["Genre"])
+        recommandations = df_film[
+            (df_film["Title"] != choix_titre) & 
+            (df_film["Genre"] == film["Genre"])
         ].head(5)
 
         # Boucle sécurisée
@@ -284,7 +284,7 @@ else:
         # --- 1. Sélection du Réalisateur ---
         
         # Liste unique des réalisateurs, triée et sans valeurs manquantes
-        realisateurs = df_final["Director"].dropna().unique()
+        realisateurs = df_film["Director"].dropna().unique()
         
         # Liste déroulante pour choisir le réalisateur
         realisateur_choisi = st.selectbox(
@@ -293,7 +293,7 @@ else:
         )
         
         # Filtrer le DataFrame pour le réalisateur sélectionné
-        df_realisateur = df_final[df_final["Director"] == realisateur_choisi]
+        df_realisateur = df_film[df_film["Director"] == realisateur_choisi]
         
         # Fonction pour extraire et sommer les valeurs numériques pour les prix/nominations
         def extract_and_sum_awards(df, keyword):
@@ -442,7 +442,7 @@ else:
 
 
 
-## streamlit run wildflix2.py
+## streamlit run wildflix.py
 
 ## source Streamlit_Wildflix/Scripts/activate
 ## cd Streamlit_Wildflix
