@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import seaborn as sns
 import matplotlib.pyplot as plt
+import plotly.express as px
 import base64
 import re
 from datetime import date, time
@@ -439,6 +440,237 @@ else:
 
         else:
             st.info("Aucun film trouvé pour afficher le Top 5.")
+
+
+    # Page Dashboard Film
+    elif add_menu == "Dashboard Film":
+        st.title("Dashboard Film")
+
+        df_film_final = pd.read_csv('df_film_david.csv', sep= ',')
+
+        #Graphique 1 : Top 10 pays producteurs sans les USA avec colonne OMDB
+        st.header("Top 10 des pays producteurs de films (hors USA)")
+        df_film_final['country'] = df_film_final['country'].str.replace("USA", "United States")
+        df_film_final['Pays_Principal'] = df_film_final['country'].astype(str).str.split(',').str[0]
+        df_hors_usa = df_film_final[df_film_final['Pays_Principal'] != 'United States']
+        top_countries = df_hors_usa[df_hors_usa['Pays_Principal'] != 'Inconnu']['Pays_Principal'].value_counts().head(10)
+        fig, ax = plt.subplots(figsize=(10, 6))
+        sns.barplot(x=top_countries.values, y=top_countries.index,palette="viridis", ax=ax)
+        ax.set_title("Top 10 des Pays Producteurs (Hors USA)", fontsize=15)
+        ax.set_xlabel("Nombre de films")
+        ax.set_ylabel("Pays")
+        st.pyplot(fig)
+
+        #Graphique 2 : USA vs reste du monde avec colonne OMDB
+        st.header("USA vs Reste du monde")
+        nb_usa = df_film_final[df_film_final['Pays_Principal'] == 'United States'].shape[0]
+        nb_total = df_film_final.shape[0]
+        pourcentage = (nb_usa / nb_total) * 100
+        st.metric(
+            label="Films Américains",
+            value=nb_usa,
+            delta=f"{pourcentage:.1f}% du catalogue"
+        )
+        nb_usa = df_film_final[df_film_final['Pays_Principal'] == 'United States'].shape[0]
+        nb_autres =df_film_final[df_film_final['Pays_Principal'] != 'United States'].shape[0]
+        labels = ['USA', 'Reste du Monde']
+        sizes = [nb_usa, nb_autres]
+        colors = ['#3b8ed0', '#e0e0e0']
+        fig_vs, ax = plt.subplots(figsize=(6, 6))
+        ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
+        ax.set_title("Proportion des films USA")
+        st.pyplot(fig_vs)
+
+        #Graphique 3 : Distribution des notes
+        st.header("Distribution des Notes IMDb")
+        sns.set_theme(style="darkgrid")
+        fig_distri, ax = plt.subplots(figsize=(10, 6))
+        sns.histplot(df_film_final['imdbRating'], kde=True, color="skyblue", bins=20, ax=ax)
+        moyenne = df_film_final['imdbRating'].mean()
+        mediane = df_film_final['imdbRating'].median()
+        ax.axvline(moyenne, color='red', linestyle='--', linewidth=2, label=f'Moyenne: {moyenne:.2f}')
+        ax.axvline(mediane, color='green', linestyle='-', linewidth=2, label=f'Médiane: {mediane:.2f}')
+        ax.set_title("Distribution des Notes IMDb", fontsize=16)
+        ax.set_xlabel("Note IMDb (0-10)", fontsize=12)
+        ax.set_ylabel("Nombre de films", fontsize=12)
+        ax.legend() 
+        st.pyplot(fig_distri)
+
+        #Graphique 4 : Top 10 des succès/flops 
+        st.header("Top 10 des succès/flops")
+        movies_finance = df_film_final.dropna(subset=['budget', 'BoxOffice']).copy()
+        movies_finance['Profit_M'] = (movies_finance['BoxOffice'] - movies_finance['budget']) / 1_000_000
+        top_10_succes = movies_finance.nlargest(10, 'Profit_M')
+        top_10_flops = movies_finance.nsmallest(10, 'Profit_M')
+        movies_extremes = pd.concat([top_10_flops, top_10_succes])
+        movies_extremes = movies_extremes.sort_values('Profit_M', ascending=True)
+        movies_extremes['Type'] = movies_extremes['Profit_M'].apply(lambda x: 'Succès' if x > 0 else 'Flop')
+        fig_finance = px.bar(
+            movies_extremes,
+            x="Profit_M",
+            y="Title",
+            orientation='h', 
+            color="Type",
+            color_discrete_map={'Succès': '#00CC96', 'Flop': '#EF553B'},
+            hover_data=['budget', 'BoxOffice'],
+            text="Profit_M", 
+            title="💸 Top 10 Flops vs Succès (Profit Net en Millions $)",
+            labels={"Profit_M": "Profit / Perte (M$)", "movie_title_omdb": "Titre"},
+            template="plotly_dark"
+        )
+        fig_finance.update_traces(texttemplate='%{text:.0f} M', textposition='outside')
+        fig_finance.show()
+        st.plotly_chart(fig_finance)
+
+        #Graphique 5 : Nombre de films par genre
+        st.header(" Nombre de films par genre")
+        genres_split = df_film_final['Genre'].str.split(', ')
+        genres_exploded = genres_split.explode()
+        df_genres_counts = genres_exploded.value_counts().reset_index()
+        df_genres_counts.columns = ['Genre', 'Nombre_de_Films']
+        df_genres_counts = df_genres_counts[df_genres_counts['Genre'] != 'N/A']
+        fig_genres = px.bar(
+            df_genres_counts,
+            x='Nombre_de_Films',
+            y='Genre',
+            orientation='h',
+            title="🎬 Répartition des Films par Genre (Multi-labels)",
+            text='Nombre_de_Films',
+            color='Nombre_de_Films',
+            template="plotly_dark"
+        )
+
+        fig_genres.update_layout(yaxis={'categoryorder':'total ascending'})
+        fig_genres.show()
+        st.plotly_chart(fig_genres)
+
+        #Graphique 6 : Top 10 films les plus primés
+        st.header("Top 10 films les plus primés")
+        def calcul_wins_simple(texte):
+            if pd.isna(texte) or texte == "N/A":
+                return 0
+            texte_propre = texte.replace('.', ' ').replace(',', ' ').replace('&', ' ')
+            mots = texte_propre.split()
+            total = 0
+            for i in range(len(mots)):
+                mot_actuel = mots[i].lower()
+                if mot_actuel == 'win' or mot_actuel == 'wins':
+                    mot_avant = mots[i-1]
+                    if mot_avant.isdigit():
+                        total += int(mot_avant)
+                elif mot_actuel == 'won':
+                    if i < len(mots) - 1:
+                        mot_apres = mots[i+1]
+                        if mot_apres.isdigit():
+                            total += int(mot_apres)
+
+            return total
+
+        df_film_final['Nb_Wins'] = df_film_final['Awards'].apply(calcul_wins_simple)
+        print(df_film_final[['Awards', 'Nb_Wins']].head())
+
+        top_films_awards = df_film_final.sort_values('Nb_Wins', ascending=False).head(10)
+        fig_top_awards = px.bar(
+            top_films_awards,
+            x='Nb_Wins',
+            y='Title',
+            orientation='h',
+            title="🏆 Top 10 des Films les plus Récompensés",
+            text='Nb_Wins',
+            color='Nb_Wins',
+            color_continuous_scale='YlOrRd',
+            template="plotly_dark"
+        )
+        fig_top_awards.update_layout(yaxis={'categoryorder':'total ascending'})
+        fig_top_awards.show()
+        st.plotly_chart(fig_top_awards)
+
+    # Page Dashboard Acteur/Actrice
+    elif add_menu == "Dashboard Acteur/Actrice":
+        st.title("Dashboard Acteur/Actrice")
+
+        fichier_stats='Emilie_stats_acteurs.csv'
+        @st.cache_data
+        def load_data(path):
+            data = pd.read_csv(path)
+            return data
+
+        df_final_actors = load_data(fichier_stats)
+
+        st.header("Acteurs et actrices en base :performing_arts:")
+        Count_actors=df_final_actors['Nom_acteur'].nunique()
+        st.subheader(f"{Count_actors}")
+
+        col1, col2 = st.columns(2)
+        with col1 :
+            st.subheader("Genres :mens: :womens:")
+            df_final_actors['Genre'] = df_final_actors['Genre'].fillna('NA')
+            genre_counts=df_final_actors['Genre'].value_counts()
+            fig, ax = plt.subplots()
+            ax.pie(
+                genre_counts, 
+                labels=genre_counts.index, 
+                autopct='%1.0f%%', 
+                colors=['maroon', 'orange', 'darkseagreen', "mediumpurple"])
+            ax.legend(loc="best") 
+            ax.axis('equal') 
+            st.pyplot(fig)
+
+        with col2 :
+            st.subheader("Nationalités (Top 6) :world_map:")
+            nationalite_count=df_final_actors['Pays naissance'].value_counts()
+            liste_camembert = nationalite_count[0:6]
+            fig, ax = plt.subplots()
+            ax.pie(liste_camembert, 
+            labels=liste_camembert.index, 
+            autopct='%1.0f%%',
+            colors=['maroon', 'orange', 'darkseagreen', 'mediumpurple', 'cornflowerblue', 'sienna'])
+            ax.legend(loc="best") 
+            ax.axis('equal') 
+            st.pyplot(fig)
+
+        st.header(f"Acteurs et actrices les plus présents :clapper:")
+        class_film = df_final_actors.groupby('Nom_acteur')['imdbID'].count()
+        top_10_acteurs = class_film.sort_values(ascending=False).head(10)
+        df_top_10 = top_10_acteurs.reset_index(name='Nombre de Films')
+        st.bar_chart(data=df_top_10, x='Nom_acteur', y='Nombre de Films', color='#800000')
+
+        st.header("Acteurs et actrices les plus rentables :moneybag:")
+        class_money = df_final_actors.groupby('Nom_acteur')['BoxOffice'].sum()
+        top_10_money = class_money.sort_values(ascending=False).head(10)
+        df_top_money = top_10_money.reset_index(name='Revenu total')
+        st.bar_chart(data=df_top_money, x='Nom_acteur', y='Revenu total', color="#FFD700")
+
+
+        st.header("Acteur et actrice en tête d'affiche :sparkles:")
+        col1, col2 = st.columns(2)
+        with col1:
+            top_man = df_final_actors[df_final_actors['Genre'] == 'Homme'].groupby('Nom_acteur')['imdbID'].count()
+            one_man = top_man.sort_values(ascending=False).head(1)
+            acteur_index = one_man.index
+            nom_acteur_ok = acteur_index[0]
+            st.subheader("Acteur le plus présent")
+            acteur_url = df_final_actors[df_final_actors['Nom_acteur'] == nom_acteur_ok]['Full_Image_URL'].iloc[0]
+            st.image(acteur_url, width=300)
+            st.text(f"{nom_acteur_ok}")
+
+        with col2:
+            top_woman = df_final_actors[df_final_actors['Genre'] == 'Femme'].groupby('Nom_acteur')['imdbID'].count()
+            one_woman = top_woman.sort_values(ascending=False).head(1)
+            actrice_index = one_woman.index
+            nom_actrice_ok = actrice_index[0]
+            st.subheader("Actrice la plus présente")
+            actrice_url = df_final_actors[df_final_actors['Nom_acteur'] == nom_actrice_ok]['Full_Image_URL'].iloc[0]
+            st.image(actrice_url, width=300)
+            st.text(f"{nom_actrice_ok}")
+
+        st.header("Acteurs et actrices étrangers qui ont réussi à Hollywood:earth_africa:")
+        top_act_etrangers = df_final_actors[(df_final_actors['Pays naissance'] != 'USA') & (df_final_actors['Country'] == 'United States')].groupby(['Nom_acteur', 'Pays naissance'])['imdbID'].count()
+        top_etranger = top_act_etrangers.sort_values(ascending=False).head(10)
+        df_top_etranger = top_etranger.reset_index(name='Nombre de films')
+        fig = px.bar(df_top_etranger, x='Nom_acteur', y='Nombre de films', color="Pays naissance")
+        st.plotly_chart(fig, use_container_width=True)
+
 
 
 
