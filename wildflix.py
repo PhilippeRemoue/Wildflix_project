@@ -34,13 +34,14 @@ def set_bg(image_file):
     st.markdown(css, unsafe_allow_html=True)
 
 # Charger le fichier CSV
-df = pd.read_csv("users.csv",sep=",")
+df = pd.read_csv("users.csv", sep=";")
 
 # Initialiser la session
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
     st.session_state.username = ""
     st.session_state.role = ""
+
 
 # CSS pour la sidebar
 st.markdown(
@@ -59,6 +60,11 @@ st.markdown(
     [data-testid="stSidebar"] h4 {
         color: #E50914 !important;
         font-weight: bold !important;
+    }
+
+    /* Forcer le texte normal en blanc */
+    .stMarkdown p {
+        color: white !important;
     }
 
     /* Texte normal en blanc */
@@ -102,11 +108,24 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Style spécifique pour le titre "Créer un compte" 
+st.markdown( 
+    """ 
+    <style> 
+    .signup-title { 
+        color: white !important; 
+        font-weight: bold; 
+    } 
+    </style> 
+    """, 
+    unsafe_allow_html=True 
+)
+
 
 # Page de connexion
 if not st.session_state.authenticated:
     set_bg("Image_salle_cine_copilot.png")
-
+   
     # Titre rouge fixe au centre
     st.markdown(
         """
@@ -173,39 +192,78 @@ if not st.session_state.authenticated:
         unsafe_allow_html=True
     )
 
+    # Initialiser la variable signup_mode
+    if "signup_mode" not in st.session_state:
+        st.session_state.signup_mode = False
 
+    
     # Espacement sous le titre fixe pour laisser voir le fond
     st.markdown("<br><br><br><br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
 
-    # Formulaire "normal" 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    if st.session_state.signup_mode:
+        st.markdown("<h2 class='signup-title'>✍️ Créer un compte</h2>", unsafe_allow_html=True)
 
-    if st.button("Connexion"):
-        user = df[(df["name"] == username) & (df["password"] == password)]
-        if not username or not password:
-            st.error("Les champs username et mot de passe doivent être remplis")
-        elif not user.empty:
-            st.session_state.authenticated = True
-            st.session_state.username = user.iloc[0]["name"]
-            st.session_state.role = user.iloc[0]["role"]
+        new_name = st.text_input("Nom d'utilisateur")
+        new_password = st.text_input("Mot de passe", type="password") 
+        new_email = st.text_input("Email")
 
-            df.loc[df["name"] == username, "logged_in"] = True
-            df.to_csv("users.csv", index=False)
+        if st.button("Valider la création"):
+            if not new_name or not new_password or not new_email: 
+                st.error("Tous les champs doivent être remplis.") 
+            elif new_name in df["name"].values: 
+                st.error("Ce nom d'utilisateur existe déjà.") 
+            else: 
+                new_user = { 
+                    "name": new_name, 
+                    "password": new_password, 
+                    "email": new_email,
+                    "failed_login_attempts": 0, 
+                    "logged_in": False, 
+                    "role": "utilisateur" 
+                } 
+                df = pd.concat([df, pd.DataFrame([new_user])], ignore_index=True) 
+                df.to_csv("users.csv", sep=";", index=False) 
+                st.success("Compte créé avec succès ! Vous pouvez maintenant vous connecter.")
+                st.session_state.signup_mode = False
+                st.rerun()
 
-            st.success(f"Bienvenue {username} !")
-            st.rerun()
-        else:
-            if username in df["name"].values:
-                df.loc[df["name"] == username, "failed_login_attempts"] += 1
-                df.to_csv("users.csv", index=False)
-            st.error("Login ou mot de passe incorrect")
+    else:
+        # Formulaire "normal" 
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+
+        if st.button("Connexion"):
+            user = df[(df["name"] == username) & (df["password"] == password)]
+            if not username or not password:
+                st.error("Les champs username et mot de passe doivent être remplis")
+            elif not user.empty:
+                st.session_state.authenticated = True
+                st.session_state.username = user.iloc[0]["name"]
+                st.session_state.role = user.iloc[0]["role"]
+
+                df.loc[df["name"] == username, "logged_in"] = True
+                df.to_csv("users.csv", sep = ";", index=False)
+
+                st.success(f"Bienvenue {username} !")
+                st.rerun()
+            else:
+                if username in df["name"].values:
+                    df.loc[df["name"] == username, "failed_login_attempts"] += 1
+                    df.to_csv("users.csv", sep = ";", index=False)
+                st.error("Login ou mot de passe incorrect")
+
+    st.write("Pas encore de compte WILDFLIX ?") 
+    if st.button("Créer un compte"): 
+        st.session_state.signup_mode = True 
+        st.rerun()   
+
+
 
 else:
     ##Bouton de déconnexion en haut de la sidebar
     if st.sidebar.button("Déconnexion"):
         df.loc[df["name"] == st.session_state.username, "logged_in"] = False
-        df.to_csv("users.csv", index=False)
+        df.to_csv("users.csv", sep = ";", index=False)
 
         st.session_state.authenticated = False
         st.session_state.username = ""
@@ -218,11 +276,27 @@ else:
     # On affiche un menu (option_menu) dans la barre latérale (sidebar)
     # L'utilisateur peut choisir la page qu'il souhaite entre cinq options
     with st.sidebar:
-        add_menu = option_menu(
+        if st.session_state.role == "utilisateur":
+            # L'utilisateur simple ne voit que "Accueil"
+            add_menu = option_menu(
                 menu_title=None,
-                options = ["Accueil", "Dashboard Réalisateur", "Dashboard Film", "Dashboard Acteur/Actrice", "Dashboard Genre"]
+                options = ["Accueil"]
 
             )
+        elif st.session_state.role == "administrateur":
+            # L'administrateur voit toutes les pages
+            add_menu = option_menu(
+                menu_title=None,
+                options=["Accueil", "Dashboard Réalisateur", "Dashboard Film", "Dashboard Acteur/Actrice", "Dashboard Genre"]
+            )
+        else: 
+            # Valeur par défaut si le rôle n'est pas reconnu 
+            add_menu = option_menu( 
+                menu_title=None, 
+                options=["Accueil"] 
+            )
+
+
     # Charger le fichier df_film.csv
     df_film = pd.read_csv("df_film.csv", sep=";")
 
@@ -277,7 +351,12 @@ else:
                     st.image(rec.Poster, width=150)
                 else:
                     st.write("📌 Poster indisponible")
+                # Titre
                 st.caption(rec.Title)
+                # Synopsis (texte court)
+                if pd.notna(rec.Plot):
+                    st.markdown(f"<small>{rec.Plot}</small>", unsafe_allow_html=True)
+
 
     # Page Dashboard Réalisateur
     elif add_menu == "Dashboard Réalisateur":

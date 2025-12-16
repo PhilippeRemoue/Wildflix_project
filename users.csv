@@ -1,4 +1,5 @@
-name,password,email,failed_login_attempts,logged_in,role
-Root,root,utilisateur@gmail.com,,False,utilisateur
-Admin,admin,admin@gmail.com,,True,Administrateur
-utilisateur,utilisateurMDP,,,False,utilisateur
+name;password;email;failed_login_attempts;logged_in;role
+Root;root;utilisateur@gmail.com;;False;utilisateur
+Admin;admin;admin@gmail.com;;False;administrateur
+utilisateur;utilisateurMDP;;;False;utilisateur
+Philippe;Test;premoue@hotmail.com;0.0;True;utilisateur
