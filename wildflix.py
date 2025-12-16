@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import base64
 import re
+import numpy as np
 from datetime import date, time
 from streamlit_option_menu import option_menu
 from streamlit_authenticator import Authenticate
@@ -176,7 +177,7 @@ if not st.session_state.authenticated:
     # Espacement sous le titre fixe pour laisser voir le fond
     st.markdown("<br><br><br><br><br><br><br><br><br><br><br>", unsafe_allow_html=True)
 
-    # Formulaire "normal" (défile, mais stylé correctement)
+    # Formulaire "normal" 
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
 
@@ -215,7 +216,7 @@ else:
     st.sidebar.markdown(f"### Bienvenue {st.session_state.username}")
 
     # On affiche un menu (option_menu) dans la barre latérale (sidebar)
-    # L'utilisateur peut choisir la page qu'il souhaite entre deux options
+    # L'utilisateur peut choisir la page qu'il souhaite entre cinq options
     with st.sidebar:
         add_menu = option_menu(
                 menu_title=None,
@@ -671,7 +672,134 @@ else:
         fig = px.bar(df_top_etranger, x='Nom_acteur', y='Nombre de films', color="Pays naissance")
         st.plotly_chart(fig, use_container_width=True)
 
+    # Page Dashboard Genre
+    elif add_menu == "Dashboard Genre":
+        st.title("Dashboard Genre")
 
+        # --- 1. CONFIGURATION ET CHARGEMENT ---
+
+        st.set_page_config(layout="wide")
+        st.title("🎬 Analyse des KPIs Cinématographiques par Genre")
+
+        @st.cache_data 
+        def load_and_calculate_kpis(file_path):
+            """Charge le fichier, nettoie les genres et calcule les KPIs."""
+            
+            # CHARGEMENT (Le fichier df_films.xlsx doit être dans le même dossier que app.py)
+            try:
+                df_final = pd.read_excel(file_path)
+            except FileNotFoundError:
+                st.error(f"Erreur : Le fichier de données '{file_path}' est introuvable. Assurez-vous qu'il est dans le même répertoire que app.py.")
+                return pd.DataFrame() 
+                
+            # NETTOYAGE ET DÉCOMPOSITION (EXPLODE) DES GENRES
+            df_genres = df_final.copy()
+            df_genres['genres'] = df_genres['genres'].fillna('')
+            df_genres['Genre'] = df_genres['genres'].str.split('|')
+            df_genres_exploded = df_genres.explode('Genre')
+            df_genres_exploded['Genre'] = df_genres_exploded['Genre'].str.strip()
+            
+            # AGRÉGATION DES KPIS (Calcul Propre)
+            aggregations = {
+                'budget': 'median', 'gross': 'median',
+                'cast_total_facebook_likes': 'median', 'imdbRating': 'mean', 
+                'num_voted_users': 'median', 'title_year': 'count' 
+            }
+            
+            kpi_results_clean = df_genres_exploded.groupby('Genre').agg(aggregations)
+            
+            kpi_results_clean.columns = [
+                'Budget_Median_USD', 'Recettes_Median_USD', 'Star_Power_Median', 
+                'IMDb_Score_Mean', 'Votants_Median', 'Nombre_Films'
+            ]
+            kpi_results_clean['Marge_Profit_Median_USD'] = kpi_results_clean['Recettes_Median_USD'] - kpi_results_clean['Budget_Median_USD']
+            
+            kpi_results_clean = kpi_results_clean[kpi_results_clean['Nombre_Films'] >= 5] 
+            kpi_results_clean = kpi_results_clean.sort_values(by='Star_Power_Median', ascending=False)
+            
+            return kpi_results_clean
+
+        # Nom du fichier
+        FILE_NAME = "df_films_stephane.xlsx"
+        KPI_DATA = load_and_calculate_kpis(FILE_NAME)
+
+        if KPI_DATA.empty:
+            st.stop() 
+
+        # --- 2. FONCTION DE CRÉATION DE GRAPHIQUE ---
+
+        def plot_kpi_bar(df, col, title, ylabel, scale, palette):
+            """Génère un graphique en barres Streamlit."""
+            df_plot = df.sort_values(by=col, ascending=False)
+            df_plot['Scaled_Value'] = df_plot[col] / scale
+            df_plot = df_plot[df_plot.index != '']
+
+            if col == 'Marge_Profit_Median_USD':
+                # Crée des couleurs différentes pour le positif et le négatif
+                color = ['g' if val > 0 else 'r' for val in df_plot['Scaled_Value']]
+            else:
+                color = palette
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            sns.barplot(
+                x=df_plot.index, 
+                y='Scaled_Value', 
+                data=df_plot, 
+                ax=ax, 
+                palette=palette if col != 'Marge_Profit_Median_USD' else color
+            )
+            
+            ax.set_title(title, fontsize=16)
+            ax.set_xlabel('Genre', fontsize=12)
+            ax.set_ylabel(ylabel, fontsize=12)
+            plt.xticks(rotation=45, ha='right')
+            plt.grid(axis='y', linestyle='--')
+            plt.tight_layout()
+            return fig
+
+        # --- 3. AFFICHAGE DU DASHBOARD ---
+
+        st.header("Analyse de la Puissance des Stars et des Motivations")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("1. Attractivité des Stars")
+            fig1 = plot_kpi_bar(
+                KPI_DATA, 'Star_Power_Median', 'Puissance des Stars Médiane par Genre (k Likes)', 
+                'Likes Facebook (en milliers)', 1000, 'Blues_d'
+            )
+            st.pyplot(fig1)
+
+        with col2:
+            st.subheader("2. Investissement")
+            fig2 = plot_kpi_bar(
+                KPI_DATA, 'Budget_Median_USD', 'Budget Médian par Genre (Millions USD)', 
+                'Budget (Millions USD)', 1000000, 'Greens_d'
+            )
+            st.pyplot(fig2)
+
+        col3, col4 = st.columns(2)
+
+        with col3:
+            st.subheader("3. Prestige / Qualité")
+            fig3 = plot_kpi_bar(
+                KPI_DATA, 'IMDb_Score_Mean', 'Score IMDb Moyen par Genre (0-10)', 
+                'Score IMDb', 1, 'magma_r'
+            )
+            st.pyplot(fig3)
+
+        with col4:
+            st.subheader("4. Performance / Rentabilité")
+            fig4 = plot_kpi_bar(
+                KPI_DATA, 'Marge_Profit_Median_USD', 'Marge de Profit Médiane par Genre (Millions USD)', 
+                'Profit (Millions USD)', 1000000, 'RdYlGn'
+            )
+            st.pyplot(fig4)
+
+        st.header("🔍 Tableau de Données Agrégées (Top 15)")
+        st.dataframe(KPI_DATA.head(15))
 
 
 ## streamlit run wildflix.py
