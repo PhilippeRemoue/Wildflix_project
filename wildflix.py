@@ -62,11 +62,7 @@ st.markdown(
         font-weight: bold !important;
     }
 
-    /* Forcer le texte normal en blanc */
-    .stMarkdown p {
-        color: white !important;
-    }
-
+    
     /* Texte normal en blanc */
     [data-testid="stSidebar"] p {
         color: white !important;
@@ -178,6 +174,16 @@ if not st.session_state.authenticated:
         unsafe_allow_html=True
     )
 
+    st.markdown( 
+        """ 
+        <style> 
+        .signup-message { 
+            color: white !important; 
+        }
+        </style>
+        """, 
+        unsafe_allow_html=True )
+
     # Styles du message d'erreur de connexion
     st.markdown(
         """
@@ -252,7 +258,7 @@ if not st.session_state.authenticated:
                     df.to_csv("users.csv", sep = ";", index=False)
                 st.error("Login ou mot de passe incorrect")
 
-    st.write("Pas encore de compte WILDFLIX ?") 
+    st.markdown("<p class='signup-message'>Pas encore de compte WILDFLIX ?</p>", unsafe_allow_html=True) 
     if st.button("Créer un compte"): 
         st.session_state.signup_mode = True 
         st.rerun()   
