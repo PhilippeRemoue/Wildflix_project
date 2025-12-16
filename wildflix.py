@@ -12,6 +12,14 @@ from streamlit_option_menu import option_menu
 from streamlit_authenticator import Authenticate
 from pathlib import Path
 
+
+# Choix du layout selon l'état de connexion 
+if "authenticated" in st.session_state and st.session_state.authenticated: 
+    st.set_page_config(layout="wide") 
+else: 
+    st.set_page_config() # par défaut = centered
+
+
 # ajouter un Fond d'écran
 def set_bg(image_file):
     """
@@ -310,6 +318,7 @@ else:
     # Page Accueil
     if add_menu == "Accueil":
         st.title("Accueil")
+        st.set_page_config(layout="wide")
 
         # Liste déroulante basée sur la colonne Title
         choix_titre = st.selectbox(
