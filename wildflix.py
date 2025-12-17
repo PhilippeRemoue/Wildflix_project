@@ -7,10 +7,16 @@ import plotly.express as px
 import base64
 import re
 import numpy as np
+import sklearn
 from datetime import date, time
 from streamlit_option_menu import option_menu
 from streamlit_authenticator import Authenticate
 from pathlib import Path
+from sklearn.preprocessing import StandardScaler, MultiLabelBinarizer 
+from sklearn.neighbors import NearestNeighbors 
+from scipy.sparse import hstack
+from sklearn.model_selection import train_test_split
+
 
 
 # Choix du layout selon l'état de connexion 
@@ -313,6 +319,69 @@ else:
 
     # Charger le fichier df_film.csv
     df_film = pd.read_csv("df_film.csv", sep=";")
+    df_movies_clean_colonne = df_film.drop(columns=["DVD","Website","Response","totalSeasons","Season","Episode","seriesID","Production","Source_Currency","genres","BoxOffice","movie_title","title_year"])
+    df_movies_clean_valeur = df_movies_clean_colonne.copy()
+    df_movies_clean_valeur['duration'] = df_movies_clean_valeur['duration'].fillna(df_movies_clean_colonne['duration'].mean())
+    df_movies_clean_valeur['color'] = df_movies_clean_valeur['color'].fillna("Color")
+    df_movies_clean_valeur['imdbRating'] = df_movies_clean_valeur['imdbRating'].fillna(df_movies_clean_colonne['imdbRating'].mean())
+    df_movies_clean_valeur['Actors'] = df_movies_clean_valeur['Actors'].fillna("Non renseigné")
+    df_movies_clean_valeur['Awards'] = df_movies_clean_valeur['Awards'].fillna("Non récompensé")
+    df_movies_clean_valeur['Plot'] = df_movies_clean_valeur['Plot'].fillna("Non renseigné")
+    df_movies_clean_valeur['Director'] = df_movies_clean_valeur['Director'].fillna("Non renseigné")
+    df_movies_clean_valeur['Genre'] = df_movies_clean_valeur['Genre'].fillna("Non renseigné")
+    df_movies_clean_valeur = df_movies_clean_valeur.dropna(subset=['Title'], axis=0)
+
+    # --- 1) Sélection des colonnes utiles --- 
+    cols = ["Title", "Genre", "imdbRating"] 
+    df_knn = df_movies_clean_valeur[cols].copy()
+
+    # --- 2) Train/Test split --- 
+    train_df, test_df = train_test_split( 
+        df_knn, test_size=0.2, random_state=42, shuffle=True )
+
+    # --- 3) Fonction de découpage des genres --- 
+    def split_genres(s): 
+        return [g.strip() for g in s.split(",") if g.strip()]
+
+    # --- 4) Encodage multi-label des genres --- 
+    mlb = MultiLabelBinarizer() 
+    genres_train = mlb.fit_transform(train_df["Genre"].apply(split_genres)) 
+    genres_test = mlb.transform(test_df["Genre"].apply(split_genres))
+
+    # --- 5) Standardisation de la note IMDb --- 
+    scaler = StandardScaler() 
+    rating_train = scaler.fit_transform(train_df[["imdbRating"]]) # (n,1) 
+    rating_test = scaler.transform(test_df[["imdbRating"]]) # (n,1)
+
+    # --- 6) Concaténation des features --- 
+    X_train = np.hstack([genres_train, rating_train]) 
+    X_test = np.hstack([genres_test, rating_test])
+
+    # --- 7) Modèle KNN --- 
+    knn = NearestNeighbors(metric="cosine", n_neighbors=6) 
+    knn.fit(X_train)
+
+    # --- 8) Fonction de recommandation --- 
+    def recommander_5(title_query): 
+        if title_query not in df_knn["Title"].values: 
+            return [] 
+        row = df_knn[df_knn["Title"] == title_query].iloc[0] 
+        
+        genres_q = mlb.transform([split_genres(row["Genre"])]) # (1,26) 
+        rating_q = scaler.transform([[row["imdbRating"]]]) # (1,1) 
+        X_q = np.hstack([genres_q, rating_q]) # (1,27) 
+        
+        distances, indices = knn.kneighbors(X_q, n_neighbors=6) 
+        
+        voisins = [] 
+        for idx in indices[0]: 
+            titre_voisin = train_df.iloc[idx]["Title"] 
+            if titre_voisin != title_query: 
+                voisins.append(titre_voisin) 
+            if len(voisins) == 5: 
+                break 
+        return voisins
+
 
 
     # Page Accueil
@@ -353,13 +422,11 @@ else:
 
         rec_cols = st.columns(5)
         # Exemple : recommandations basées sur le même genre que le film choisi
-        recommandations = df_film[
-            (df_film["Title"] != choix_titre) & 
-            (df_film["Genre"] == film["Genre"])
-        ].head(5)
+        recommandations = recommander_5(choix_titre)
 
         # Boucle sécurisée
-        for i, rec in enumerate(recommandations.itertuples(index=False)):
+        for i, titre in enumerate(recommandations):
+            rec = df_film[df_film["Title"] == titre].iloc[0]
             with rec_cols[i]:
                 # Vérifie que l'URL du poster est valide
                 if pd.notna(rec.Poster) and str(rec.Poster).startswith("http"):
@@ -411,7 +478,7 @@ else:
         else:
             genre_favori = "Non disponible"
         
-        # Calcul des Prix
+        # Calcul des Prix/récompenses
         total_oscars = extract_and_sum_awards(df_realisateur, "Oscar")
         total_wins = extract_and_sum_awards(df_realisateur, "win")
         total_nominations = extract_and_sum_awards(df_realisateur, "nomination")
@@ -896,7 +963,7 @@ else:
         st.dataframe(KPI_DATA.head(15))
 
 
-## streamlit run wildflix.py
+## streamlit run wildflix_V2.py
 
 ## source Streamlit_Wildflix/Scripts/activate
 ## cd Streamlit_Wildflix
